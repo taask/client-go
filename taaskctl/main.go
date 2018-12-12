@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 
 	log "github.com/cohix/simplog"
@@ -27,38 +28,61 @@ func main() {
 		os.Exit(1)
 	}
 
-	taskBody := addition{
-		First:  5,
-		Second: 12,
+	numTasks := 500
+	resultChan := make(chan answer)
+
+	for i := 0; i < numTasks; i++ {
+		go func(resultChan chan answer) {
+			taskBody := addition{
+				First:  rand.Intn(50),
+				Second: rand.Intn(100),
+			}
+
+			taskBodyJSON, err := json.Marshal(taskBody)
+			if err != nil {
+				log.LogError(errors.Wrap(err, "failed to Marshal"))
+				os.Exit(1)
+			}
+
+			task := &model.Task{
+				Kind: "com.taask.dummy",
+				Body: taskBodyJSON,
+			}
+
+			uuid, err := client.SendTask(task)
+			if err != nil {
+				log.LogError(errors.Wrap(err, "failed to SendTask"))
+				os.Exit(1)
+			}
+
+			resultJSON, err := client.GetTaskResult(uuid)
+			if err != nil {
+				log.LogError(errors.Wrap(err, "failed to GetTaskResult"))
+				os.Exit(1)
+			}
+
+			var taskAnswer answer
+			if err := json.Unmarshal(resultJSON, &taskAnswer); err != nil {
+				log.LogError(errors.Wrap(err, "failed to Unmarshal"))
+			}
+
+			resultChan <- taskAnswer
+		}(resultChan)
 	}
 
-	taskBodyJSON, err := json.Marshal(taskBody)
-	if err != nil {
-		log.LogError(errors.Wrap(err, "failed to Marshal"))
-		os.Exit(1)
-	}
+	completed := 0
+	log.LogInfo("waiting for answers")
 
-	task := &model.Task{
-		Kind: "com.taask.dummy",
-		Body: taskBodyJSON,
-	}
+	for {
+		answer := <-resultChan
+		log.LogInfo(fmt.Sprintf("task answer: %d", answer.Answer))
 
-	uuid, err := client.SendTask(task)
-	if err != nil {
-		log.LogError(errors.Wrap(err, "failed to SendTask"))
-		os.Exit(1)
-	}
+		completed++
 
-	resultJSON, err := client.GetTaskResult(uuid)
-	if err != nil {
-		log.LogError(errors.Wrap(err, "failed to GetTaskResult"))
-		os.Exit(1)
-	}
+		log.LogInfo(fmt.Sprintf("%d/%d completed", completed, numTasks))
 
-	var taskAnswer answer
-	if err := json.Unmarshal(resultJSON, &taskAnswer); err != nil {
-		log.LogError(errors.Wrap(err, "failed to Unmarshal"))
+		if completed == numTasks {
+			break
+		}
 	}
-
-	log.LogInfo(fmt.Sprintf("task answer: %d", taskAnswer.Answer))
 }

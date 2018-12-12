@@ -3,6 +3,7 @@ package taask
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/cohix/simplcrypto"
@@ -18,12 +19,11 @@ import (
 type Client struct {
 	client   service.TaskServiceClient
 	taskKeys map[string]*simplcrypto.KeyPair
+	keyLock  *sync.Mutex
 }
 
 // NewClient creates a Client
 func NewClient(addr, port string) (*Client, error) {
-	log.LogInfo("creating client")
-
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Dial")
@@ -31,6 +31,7 @@ func NewClient(addr, port string) (*Client, error) {
 
 	client := &Client{
 		taskKeys: make(map[string]*simplcrypto.KeyPair),
+		keyLock:  &sync.Mutex{},
 	}
 
 	client.client = service.NewTaskServiceClient(conn)
@@ -52,30 +53,35 @@ func (c *Client) SendTask(task *model.Task) (string, error) {
 		return "", errors.Wrap(err, "failed to Queue")
 	}
 
+	c.keyLock.Lock()
 	c.taskKeys[resp.UUID] = taskKeyPair
+	c.keyLock.Unlock()
 
 	return resp.UUID, nil
 }
 
 // GetTaskResult gets a task's result
 func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
+	c.keyLock.Lock()
 	taskKeyPair, ok := c.taskKeys[uuid]
 	if !ok {
 		return nil, errors.New(fmt.Sprintf("unable to find task %s key", uuid))
+		c.keyLock.Unlock()
+	}
+	c.keyLock.Unlock()
+
+	stream, err := c.client.CheckTask(context.Background(), &model.CheckTaskRequest{UUID: uuid})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to CheckTask")
 	}
 
 	for {
-		log.LogInfo("checking task status")
-
-		stream, err := c.client.CheckTask(context.Background(), &model.CheckTaskRequest{UUID: uuid})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to CheckTask")
-		}
-
 		resp, err := stream.Recv()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to Recv")
 		}
+
+		log.LogInfo(fmt.Sprintf("task %s status %s", uuid, resp.Status))
 
 		if resp.Status == model.TaskStatusCompleted {
 			result, err := decryptResult(taskKeyPair, resp.Result.EncResultSymKey, resp.Result.EncResult)
