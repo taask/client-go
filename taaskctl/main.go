@@ -22,13 +22,13 @@ type answer struct {
 }
 
 func main() {
-	client, err := taask.NewClient("localhost", "3688")
+	client, err := taask.NewClient("localhost", "30688")
 	if err != nil {
 		log.LogError(errors.Wrap(err, "failed to NewClient"))
 		os.Exit(1)
 	}
 
-	numTasks := 500
+	numTasks := 1000
 	resultChan := make(chan answer)
 
 	for i := 0; i < numTasks; i++ {
@@ -45,7 +45,7 @@ func main() {
 			}
 
 			task := &model.Task{
-				Kind: "com.taask.dummy",
+				Kind: "com.taask.k8s",
 				Body: taskBodyJSON,
 			}
 
