@@ -69,8 +69,8 @@ func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
 	c.keyLock.Lock()
 	taskKeyPair, ok := c.taskKeys[uuid]
 	if !ok {
-		return nil, errors.New(fmt.Sprintf("unable to find task %s key", uuid))
 		c.keyLock.Unlock()
+		return nil, errors.New(fmt.Sprintf("unable to find task %s key", uuid))
 	}
 	c.keyLock.Unlock()
 
@@ -95,12 +95,7 @@ func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
 
 			return result, nil
 		} else if resp.Status == model.TaskStatusFailed {
-			result, err := decryptResult(taskKeyPair, resp.Result.EncResultSymKey, resp.Result.EncResult)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to decryptResult for failed task")
-			}
-
-			return nil, errors.New(string(result))
+			// do nothing for now
 		}
 
 		<-time.After(time.Second)
