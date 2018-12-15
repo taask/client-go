@@ -45,7 +45,10 @@ func main() {
 			}
 
 			task := &model.Task{
-				Kind: "com.taask.k8s",
+				Meta: &model.TaskMeta{
+					TimeoutSeconds: 60,
+				},
+				Kind: "io.taask.k8s",
 				Body: taskBodyJSON,
 			}
 

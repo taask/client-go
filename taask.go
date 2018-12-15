@@ -41,12 +41,16 @@ func NewClient(addr, port string) (*Client, error) {
 
 // SendTask sends a task to be run
 func (c *Client) SendTask(task *model.Task) (string, error) {
+	if task.Meta == nil {
+		task.Meta = &model.TaskMeta{}
+	}
+
 	taskKeyPair, err := simplcrypto.GenerateNewKeyPair()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to GenerateNewKeyPair")
 	}
 
-	task.ResultPubKey = taskKeyPair.SerializablePubKey()
+	task.Meta.ResultPubKey = taskKeyPair.SerializablePubKey()
 
 	resp, err := c.client.Queue(context.Background(), task)
 	if err != nil {
