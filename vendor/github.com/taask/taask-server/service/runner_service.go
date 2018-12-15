@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net"
+	"time"
 
 	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
@@ -48,7 +49,7 @@ func (rs *RunnerService) AuthRunner(ctx context.Context, req *model.AuthRunnerRe
 func (rs *RunnerService) RegisterRunner(req *model.RegisterRunnerRequest, stream RunnerService_RegisterRunnerServer) error {
 	defer log.LogTrace(fmt.Sprintf("RegisterRunner kind %s", req.Kind))()
 
-	tasksChan := make(chan *model.Task, 10)
+	tasksChan := make(chan *model.Task, 128)
 
 	runner := &model.Runner{
 		UUID:        model.NewRunnerUUID(),
@@ -63,12 +64,26 @@ func (rs *RunnerService) RegisterRunner(req *model.RegisterRunnerRequest, stream
 	}
 
 	defer rs.Manager.UnregisterRunner(runner)
+	go startRunnerHeartbeat(tasksChan)
+
+	log.LogInfo(fmt.Sprintf("runner %s ready to receive tasks", runner.UUID))
 
 	for {
 		task := <-tasksChan
 
+		if task.UUID != "" {
+			log.LogInfo(fmt.Sprintf("runner %s handling task %s", runner.UUID, task.UUID))
+		} else {
+			log.LogInfo(fmt.Sprintf("sending runner %s heartbeat", runner.UUID))
+		}
+
 		if err := stream.Send(task); err != nil {
 			log.LogError(errors.Wrap(err, "failed to stream.Send"))
+
+			if task.UUID != "" {
+				rs.Manager.ScheduleTaskRetry(task)
+			}
+
 			break
 		}
 	}
@@ -78,12 +93,18 @@ func (rs *RunnerService) RegisterRunner(req *model.RegisterRunnerRequest, stream
 
 // UpdateTask handles update task calls
 func (rs *RunnerService) UpdateTask(ctx context.Context, req *model.TaskUpdate) (*Empty, error) {
-	defer log.LogTrace(fmt.Sprintf("UpdateTask task %s", req.UUID))
+	defer log.LogTrace(fmt.Sprintf("UpdateTask task %s", req.UUID))()
 
-	if err := rs.Manager.UpdateTask(req); err != nil {
-		log.LogError(errors.Wrap(err, "failed to UpdateTask"))
-		return nil, err
-	}
+	go rs.Manager.Updater.UpdateTask(req)
 
 	return &Empty{}, nil
+}
+
+// TODO: find a way to terminate this
+func startRunnerHeartbeat(taskChan chan *model.Task) {
+	for {
+		<-time.After(time.Second * time.Duration(10))
+
+		taskChan <- &model.Task{}
+	}
 }

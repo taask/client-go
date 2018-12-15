@@ -1,14 +1,18 @@
 package brain
 
 import (
+	"net/http"
+
 	"github.com/cohix/simplcrypto"
 	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
 	"github.com/taask/taask-server/auth"
+	"github.com/taask/taask-server/metrics"
 	"github.com/taask/taask-server/model"
 	"github.com/taask/taask-server/model/validator"
 	"github.com/taask/taask-server/schedule"
 	"github.com/taask/taask-server/storage"
+	"github.com/taask/taask-server/update"
 )
 
 // Manager is the facade for the subsystem managers (schedule, storage, update, auth)
@@ -16,14 +20,32 @@ type Manager struct {
 	scheduler  *schedule.Manager
 	storage    storage.Manager
 	runnerAuth *auth.RunnerAuthManager
+	Updater    *update.Manager
+
+	metrics *metrics.Manager
 }
 
 // NewManager creates a new manager
-func NewManager(scheduler *schedule.Manager, storage storage.Manager, runnerAuth *auth.RunnerAuthManager) *Manager {
+func NewManager(joinCode string, storage storage.Manager) *Manager {
+	metrics, err := metrics.NewManager()
+	if err != nil {
+		log.LogError(errors.Wrap(err, "failed to metrics.NewManager"))
+		return nil
+	}
+
+	updater := update.NewManager(storage, metrics)
+
+	scheduler := schedule.NewManager(updater)
+	go scheduler.Start()
+
+	runnerAuth := auth.NewRunnerAuthManager(joinCode)
+
 	return &Manager{
 		scheduler:  scheduler,
 		storage:    storage,
 		runnerAuth: runnerAuth,
+		Updater:    updater,
+		metrics:    metrics,
 	}
 }
 
@@ -58,41 +80,39 @@ func (m *Manager) ScheduleTask(task *model.Task) (string, error) {
 	}
 
 	task.UUID = model.NewTaskUUID()
-	task.Status = model.TaskStatusWaiting
+	task.Status = "" // clear this in case it was set
+	if task.Meta.TimeoutSeconds == 0 {
+		task.Meta.TimeoutSeconds = 600 // 10m
+	}
 
-	if err := m.storage.Add(task); err != nil {
+	if err := m.storage.Add(*task); err != nil {
 		return "", errors.Wrap(err, "failed to storage.Add")
 	}
 
-	go func(storage storage.Manager) {
-		m.scheduler.ScheduleTask(task)
+	// we do a manual update to waiting to ensure the metrics catch the new task
+	m.Updater.UpdateTask(&model.TaskUpdate{UUID: task.UUID, Status: model.TaskStatusWaiting})
 
-		task.Status = model.TaskStatusQueued
-		if err := storage.Update(task); err != nil {
-			log.LogError(errors.Wrap(err, "failed to storage.Update"))
-		}
-	}(m.storage)
+	go m.scheduler.ScheduleTask(task)
 
 	return task.UUID, nil
 }
 
-// UpdateTask updates a task
-func (m *Manager) UpdateTask(update *model.TaskUpdate) error {
-	task, err := m.storage.Get(update.UUID)
-	if err != nil {
-		return errors.Wrap(err, "failed to storage.Get")
-	}
+// ScheduleTaskRetry schedules a task to be retried
+func (m *Manager) ScheduleTaskRetry(task *model.Task) {
+	go m.scheduler.ScheduleTask(task)
+}
 
-	task.Status = update.Status
-	if update.EncResult != nil {
-		task.EncResult = update.EncResult
-		task.EncResultSymKey = update.EncResultSymKey
-	}
-
-	return m.storage.Update(task)
+// GetTask gets a task from storage
+func (m *Manager) GetTask(uuid string) (*model.Task, error) {
+	return m.storage.Get(uuid)
 }
 
 // JoinCode returns the runner join code
 func (m *Manager) JoinCode() string {
 	return m.runnerAuth.JoinCode
+}
+
+// MetricsHandler returns the http handler for metrics scraping
+func (m *Manager) MetricsHandler() http.Handler {
+	return m.metrics.Handler()
 }
