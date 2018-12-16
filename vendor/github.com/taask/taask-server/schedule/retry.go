@@ -1,8 +1,11 @@
 package schedule
 
 import (
+	"fmt"
 	"time"
 
+	log "github.com/cohix/simplog"
+	"github.com/pkg/errors"
 	"github.com/taask/taask-server/model"
 )
 
@@ -13,10 +16,12 @@ type RetryTaskWorker struct {
 }
 
 func (sm *Manager) startRetryWorker(task *model.Task) {
-	if task.Meta.RetrySeconds == 0 {
-		task.Meta.RetrySeconds = 1
-	} else if task.Meta.RetrySeconds < 16 {
-		task.Meta.RetrySeconds *= 2
+	retrySeconds := task.Meta.RetrySeconds
+
+	if retrySeconds == 0 {
+		retrySeconds = 1
+	} else if retrySeconds < 16 {
+		retrySeconds *= 2
 	}
 
 	worker := &RetryTaskWorker{
@@ -28,16 +33,24 @@ func (sm *Manager) startRetryWorker(task *model.Task) {
 	sm.retrying[task.UUID] = worker
 	sm.retryLock.Unlock()
 
-	sm.updater.UpdateTask(&model.TaskUpdate{UUID: task.UUID, Status: model.TaskStatusRetrying, RetrySeconds: task.Meta.RetrySeconds})
+	update, err := task.Update(model.TaskUpdate{Status: model.TaskStatusRetrying, RetrySeconds: retrySeconds})
+	if err != nil {
+		log.LogWarn(errors.Wrap(err, "startRetryWorker failed to task.Update").Error())
+	}
+
+	sm.updater.UpdateTask(update)
 
 	go func() {
 		select {
-		case <-time.After(time.Second * time.Duration(worker.task.Meta.RetrySeconds)):
+		case <-time.After(time.Second * time.Duration(retrySeconds)):
 			// run the task
 		case <-worker.nowChan:
 			// ignore the timer and run the task
 		}
 
+		log.LogInfo(fmt.Sprintf("task %s retrying after %d seconds", task.UUID, retrySeconds))
+
+		task.Meta.RetrySeconds = retrySeconds
 		sm.requeueTask(task)
 
 		sm.retryLock.Lock()

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	log "github.com/cohix/simplog"
+	"github.com/pkg/errors"
 	"github.com/taask/taask-server/model"
 )
 
@@ -22,6 +23,14 @@ func (sm *Manager) startRunMonitor(task *model.Task, runnerPool *runnerPool, upd
 	}
 
 	if err := monitor.start(updateChan); err != nil {
+		log.LogWarn(err.Error())
+
+		update, err := task.Update(model.TaskUpdate{Status: model.TaskStatusFailed, RunnerUUID: ""})
+		if err != nil {
+			log.LogWarn(errors.Wrap(err, "startRetryWorker failed to task.Update").Error())
+		}
+
+		sm.updater.UpdateTask(update)
 		sm.startRetryWorker(task)
 	}
 }
@@ -29,7 +38,7 @@ func (sm *Manager) startRunMonitor(task *model.Task, runnerPool *runnerPool, upd
 func (rm *runMonitor) start(updateChan chan model.Task) error {
 	log.LogInfo(fmt.Sprintf("starting run monitor for task %s", rm.taskUUID))
 
-	timeoutChan := make(chan time.Time)
+	timeoutChan := make(chan time.Time, 1)
 
 	for {
 		var task model.Task

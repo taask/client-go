@@ -80,8 +80,8 @@ func (m *Manager) ScheduleTask(task *model.Task) (string, error) {
 	}
 
 	task.UUID = model.NewTaskUUID()
-	task.Status = ""           // clear this in case it was set
-	task.Meta.ResultToken = "" // clear this too
+	task.Status = ""      // clear this in case it was set
+	task.Meta.Version = 0 // set this to 0
 	if task.Meta.TimeoutSeconds == 0 {
 		task.Meta.TimeoutSeconds = 600 // 10m default
 	}
@@ -91,7 +91,12 @@ func (m *Manager) ScheduleTask(task *model.Task) (string, error) {
 	}
 
 	// we do a manual update to waiting to ensure the metrics catch the new task
-	m.Updater.UpdateTask(&model.TaskUpdate{UUID: task.UUID, Status: model.TaskStatusWaiting})
+	update, err := task.Update(model.TaskUpdate{Status: model.TaskStatusWaiting})
+	if err != nil {
+		return "", errors.Wrap(err, "failed to task.Update")
+	}
+
+	m.Updater.UpdateTask(update)
 
 	go m.scheduler.ScheduleTask(task)
 
@@ -106,6 +111,21 @@ func (m *Manager) ScheduleTaskRetry(task *model.Task) {
 // GetTask gets a task from storage
 func (m *Manager) GetTask(uuid string) (*model.Task, error) {
 	return m.storage.Get(uuid)
+}
+
+// UpdateTask applies a task update from a runner
+func (m *Manager) UpdateTask(update *model.TaskUpdate) error {
+	if update.RunnerUUID != "" {
+		return errors.New("RunnerUUID is immutable")
+	}
+
+	if update.RetrySeconds != 0 {
+		return errors.New("RetrySeconds is immutable")
+	}
+
+	m.Updater.UpdateTask(update)
+
+	return nil
 }
 
 // JoinCode returns the runner join code
