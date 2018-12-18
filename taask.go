@@ -88,6 +88,7 @@ func (c *Client) SendTask(body []byte, kind string, meta *model.TaskMeta) (strin
 
 	task.Meta.MasterEncTaskKey = masterEncTaskKeyJSON
 	task.Meta.ClientEncTaskKey = clientEncTaskKey
+	task.Kind = kind
 	task.EncBody = encBody
 
 	resp, err := c.client.Queue(context.Background(), task)
