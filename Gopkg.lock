@@ -110,7 +110,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:d73684f7d0b0f1cba587e535990bae49140eaf7a7fff27f95903208f96058c8b"
+  digest = "1:8251238e95bf7c2cf4c1fce3f018ee3dae093055a418faa68a49081f38a3eb80"
   name = "github.com/taask/taask-server"
   packages = [
     "auth",
@@ -124,7 +124,7 @@
     "update",
   ]
   pruneopts = "UT"
-  revision = "918939966249762e1b42b24ac7fe6d86f6ffd2fb"
+  revision = "1ed69692ad16ab58a3887a1ca018aae98fe7e4d1"
 
 [[projects]]
   branch = "master"
