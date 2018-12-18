@@ -17,9 +17,11 @@ import (
 
 // Client describes a taask client
 type Client struct {
-	client   service.TaskServiceClient
-	taskKeys map[string]*simplcrypto.KeyPair
-	keyLock  *sync.Mutex
+	client             service.TaskServiceClient
+	masterRunnerPubKey *simplcrypto.KeyPair
+	taskKeyPairs       map[string]*simplcrypto.KeyPair
+	taskKeys           map[string]*simplcrypto.SymKey
+	keyLock            *sync.Mutex
 }
 
 // NewClient creates a Client
@@ -30,27 +32,63 @@ func NewClient(addr, port string) (*Client, error) {
 	}
 
 	client := &Client{
-		taskKeys: make(map[string]*simplcrypto.KeyPair),
-		keyLock:  &sync.Mutex{},
+		taskKeyPairs: make(map[string]*simplcrypto.KeyPair),
+		keyLock:      &sync.Mutex{},
 	}
 
 	client.client = service.NewTaskServiceClient(conn)
+
+	authResp, err := client.client.AuthClient(context.Background(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to AuthClient")
+	}
+
+	client.masterRunnerPubKey, err = simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterRunnerPubKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to KeyPairFromSerializablePubKey")
+	}
 
 	return client, nil
 }
 
 // SendTask sends a task to be run
-func (c *Client) SendTask(task *model.Task) (string, error) {
-	if task.Meta == nil {
-		task.Meta = &model.TaskMeta{}
-	}
-
+func (c *Client) SendTask(body []byte, kind string, meta *model.TaskMeta) (string, error) {
 	taskKeyPair, err := simplcrypto.GenerateNewKeyPair()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to GenerateNewKeyPair")
 	}
 
-	task.Meta.ResultPubKey = taskKeyPair.SerializablePubKey()
+	taskKey, err := simplcrypto.GenerateSymKey()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to GenerateSymKey")
+	}
+
+	clientEncTaskKey, err := taskKeyPair.Encrypt(taskKey.JSON())
+	if err != nil {
+		return "", errors.Wrap(err, "failed to Encrypt clientEncTaskKey")
+	}
+
+	masterEncTaskKeyJSON, err := c.masterRunnerPubKey.Encrypt(taskKey.JSON())
+	if err != nil {
+		return "", errors.Wrap(err, "failed to Encrypt masterEncTaskKey")
+	}
+
+	task := &model.Task{}
+
+	if meta != nil {
+		task.Meta = meta
+	} else {
+		task.Meta = &model.TaskMeta{}
+	}
+
+	encBody, err := taskKey.Encrypt(body)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to Encrypt task body")
+	}
+
+	task.Meta.MasterEncTaskKey = masterEncTaskKeyJSON
+	task.Meta.ClientEncTaskKey = clientEncTaskKey
+	task.EncBody = encBody
 
 	resp, err := c.client.Queue(context.Background(), task)
 	if err != nil {
@@ -58,7 +96,8 @@ func (c *Client) SendTask(task *model.Task) (string, error) {
 	}
 
 	c.keyLock.Lock()
-	c.taskKeys[resp.UUID] = taskKeyPair
+	c.taskKeyPairs[resp.UUID] = taskKeyPair // TODO: persist this in real/shared storage
+	c.taskKeys[resp.UUID] = taskKey
 	c.keyLock.Unlock()
 
 	return resp.UUID, nil
@@ -66,15 +105,7 @@ func (c *Client) SendTask(task *model.Task) (string, error) {
 
 // GetTaskResult gets a task's result
 func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
-	c.keyLock.Lock()
-	taskKeyPair, ok := c.taskKeys[uuid]
-	if !ok {
-		c.keyLock.Unlock()
-		return nil, errors.New(fmt.Sprintf("unable to find task %s key", uuid))
-	}
-	c.keyLock.Unlock()
-
-	stream, err := c.client.CheckTask(context.Background(), &model.CheckTaskRequest{UUID: uuid})
+	stream, err := c.client.CheckTask(context.Background(), &service.CheckTaskRequest{UUID: uuid})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to CheckTask")
 	}
@@ -88,7 +119,7 @@ func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
 		log.LogInfo(fmt.Sprintf("task %s status %s", uuid, resp.Status))
 
 		if resp.Status == model.TaskStatusCompleted {
-			result, err := decryptResult(taskKeyPair, resp.Result.EncResultSymKey, resp.Result.EncResult)
+			result, err := c.decryptResult(uuid, resp)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to decryptResult for complete task")
 			}
@@ -102,18 +133,31 @@ func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
 	}
 }
 
-func decryptResult(taskKeyPair *simplcrypto.KeyPair, encResultKey *simplcrypto.Message, encResult *simplcrypto.Message) ([]byte, error) {
-	decResultKeyJSON, err := taskKeyPair.Decrypt(encResultKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to Decrypt result key")
-	}
+func (c *Client) decryptResult(taskUUID string, taskResponse *service.CheckTaskResponse) ([]byte, error) {
+	c.keyLock.Lock()
+	taskKey, ok := c.taskKeys[taskUUID]
+	if !ok {
+		// if this client didn't create the task, fetch the task keypair
+		// from storage and decrypt the task key from metadata
+		// TODO: add... well, real storage
+		taskKeyPair, ok := c.taskKeyPairs[taskUUID]
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("unable to find task %s key", taskUUID))
+		}
 
-	resultKey, err := simplcrypto.SymKeyFromJSON(decResultKeyJSON)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to SymKeyFromJSON")
-	}
+		taskKeyJSON, err := taskKeyPair.Decrypt(taskResponse.EncTaskKey)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to Decrypt task key JSON")
+		}
 
-	decResult, err := resultKey.Decrypt(encResult)
+		taskKey, err = simplcrypto.SymKeyFromJSON(taskKeyJSON)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to SymKeyFromJSON")
+		}
+	}
+	c.keyLock.Unlock()
+
+	decResult, err := taskKey.Decrypt(taskResponse.Result.EncResult)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Decrypt result")
 	}
