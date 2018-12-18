@@ -38,7 +38,7 @@ func NewClient(addr, port string) (*Client, error) {
 
 	client.client = service.NewTaskServiceClient(conn)
 
-	authResp, err := client.client.AuthClient(context.Background(), nil)
+	authResp, err := client.client.AuthClient(context.Background(), &service.AuthClientRequest{})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to AuthClient")
 	}
