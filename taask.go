@@ -31,21 +31,24 @@ func NewClient(addr, port string) (*Client, error) {
 		return nil, errors.Wrap(err, "failed to Dial")
 	}
 
-	client := &Client{
-		taskKeyPairs: make(map[string]*simplcrypto.KeyPair),
-		keyLock:      &sync.Mutex{},
-	}
+	tClient := service.NewTaskServiceClient(conn)
 
-	client.client = service.NewTaskServiceClient(conn)
-
-	authResp, err := client.client.AuthClient(context.Background(), &service.AuthClientRequest{})
+	authResp, err := tClient.AuthClient(context.Background(), &service.AuthClientRequest{})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to AuthClient")
 	}
 
-	client.masterRunnerPubKey, err = simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterRunnerPubKey)
+	masterRunnerPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterRunnerPubKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to KeyPairFromSerializablePubKey")
+	}
+
+	client := &Client{
+		client:             tClient,
+		masterRunnerPubKey: masterRunnerPubKey,
+		taskKeyPairs:       make(map[string]*simplcrypto.KeyPair),
+		taskKeys:           make(map[string]*simplcrypto.SymKey),
+		keyLock:            &sync.Mutex{},
 	}
 
 	return client, nil
