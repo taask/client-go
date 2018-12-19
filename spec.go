@@ -11,8 +11,10 @@ import (
 // TaskTypeTask and others are types of tasks
 const (
 	TaskTypeImmediate = "io.taask.immediate"
-	TaskTypeScheduled = "io.taask.scheduled" // not yet supported
-	TaskTypeRepeated  = "io.taask.repeated"  // not yet supported
+	TaskTypeDeferred  = "io.taask.deferred" // not yet supported
+	TaskTypeRepeated  = "io.taask.repeated" // not yet supported
+
+	TaskKindK8s = "io.taask.k8s"
 )
 
 // Spec defines the metadata wrapper for a task spec
@@ -25,7 +27,7 @@ type Spec struct {
 // Task is a user-facing variant of taask/taask-server/model/Task
 type Task struct {
 	Meta TaskMeta               `yaml:"Meta"`
-	Kind string                 `yaml:"Kind,omitempty"` // defaults to io.taask.k8s
+	Kind string                 `yaml:"Kind"`
 	Body map[string]interface{} `yaml:"Body"`
 }
 
@@ -66,6 +68,10 @@ func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey, taskKeypair
 		},
 		Kind:    t.Kind,
 		EncBody: encBody,
+	}
+
+	if task.Kind == "" {
+		task.Kind = TaskKindK8s
 	}
 
 	return task, nil
