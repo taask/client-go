@@ -57,7 +57,7 @@ func NewClient(addr, port string) (*Client, error) {
 }
 
 // SendTask sends a task to be run
-func (c *Client) SendTask(body []byte, kind string, meta TaskMeta) (string, error) {
+func (c *Client) SendTask(body map[string]interface{}, kind string, meta TaskMeta) (string, error) {
 	task := Task{
 		Meta: meta,
 		Kind: kind,

@@ -24,9 +24,9 @@ type Spec struct {
 
 // Task is a user-facing variant of taask/taask-server/model/Task
 type Task struct {
-	Meta TaskMeta    `yaml:"Meta"`
-	Kind string      `yaml:"Kind,omitempty"` // defaults to io.taask.k8s
-	Body interface{} `yaml:"Body"`
+	Meta TaskMeta               `yaml:"Meta"`
+	Kind string                 `yaml:"Kind,omitempty"` // defaults to io.taask.k8s
+	Body map[string]interface{} `yaml:"Body"`
 }
 
 // TaskMeta is a user-facing variant of taask/taask-server/model/TaskMeta
