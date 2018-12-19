@@ -36,8 +36,8 @@ type TaskMeta struct {
 }
 
 // ToModel converts a spec.Task to a model.Task by encrypting it and setting the appropriate fields
-func (s *Spec) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey, taskKeypair *simplcrypto.KeyPair) (*model.Task, error) {
-	bodyJSON, err := json.Marshal(s.Spec.Body)
+func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey, taskKeypair *simplcrypto.KeyPair) (*model.Task, error) {
+	bodyJSON, err := json.Marshal(t.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Marshal body")
 	}
@@ -59,12 +59,12 @@ func (s *Spec) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey, taskKeypair
 
 	task := &model.Task{
 		Meta: &model.TaskMeta{
-			Annotations:      s.Spec.Meta.Annotations,
-			TimeoutSeconds:   s.Spec.Meta.TimeoutSeconds,
+			Annotations:      t.Meta.Annotations,
+			TimeoutSeconds:   t.Meta.TimeoutSeconds,
 			MasterEncTaskKey: masterEncKey,
 			ClientEncTaskKey: clientEncKey,
 		},
-		Kind:    s.Spec.Kind,
+		Kind:    t.Kind,
 		EncBody: encBody,
 	}
 

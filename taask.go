@@ -24,6 +24,8 @@ type Client struct {
 	keyLock            *sync.Mutex
 }
 
+// type StatusUpdateFunc func() string
+
 // NewClient creates a Client
 func NewClient(addr, port string) (*Client, error) {
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
@@ -55,7 +57,22 @@ func NewClient(addr, port string) (*Client, error) {
 }
 
 // SendTask sends a task to be run
-func (c *Client) SendTask(body []byte, kind string, meta *model.TaskMeta) (string, error) {
+func (c *Client) SendTask(body []byte, kind string, meta TaskMeta) (string, error) {
+	task := Task{
+		Meta: meta,
+		Kind: kind,
+		Body: body,
+	}
+
+	return c.SendSpecTask(task)
+}
+
+// SendSpecTask sends a task from a spec task
+func (c *Client) SendSpecTask(spec Task) (string, error) {
+	if spec.Body == nil {
+		return "", errors.New("task body is nil")
+	}
+
 	taskKeyPair, err := simplcrypto.GenerateNewKeyPair()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to GenerateNewKeyPair")
@@ -66,33 +83,10 @@ func (c *Client) SendTask(body []byte, kind string, meta *model.TaskMeta) (strin
 		return "", errors.Wrap(err, "failed to GenerateSymKey")
 	}
 
-	clientEncTaskKey, err := taskKeyPair.Encrypt(taskKey.JSON())
+	task, err := spec.ToModel(taskKey, c.masterRunnerPubKey, taskKeyPair)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to Encrypt clientEncTaskKey")
+		return "", errors.Wrap(err, "failed to ToModel")
 	}
-
-	masterEncTaskKeyJSON, err := c.masterRunnerPubKey.Encrypt(taskKey.JSON())
-	if err != nil {
-		return "", errors.Wrap(err, "failed to Encrypt masterEncTaskKey")
-	}
-
-	task := &model.Task{}
-
-	if meta != nil {
-		task.Meta = meta
-	} else {
-		task.Meta = &model.TaskMeta{}
-	}
-
-	encBody, err := taskKey.Encrypt(body)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to Encrypt task body")
-	}
-
-	task.Meta.MasterEncTaskKey = masterEncTaskKeyJSON
-	task.Meta.ClientEncTaskKey = clientEncTaskKey
-	task.Kind = kind
-	task.EncBody = encBody
 
 	resp, err := c.client.Queue(context.Background(), task)
 	if err != nil {
@@ -107,8 +101,8 @@ func (c *Client) SendTask(body []byte, kind string, meta *model.TaskMeta) (strin
 	return resp.UUID, nil
 }
 
-// GetTaskResult gets a task's result
-func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
+// StreamTaskResult gets a task's result
+func (c *Client) StreamTaskResult(uuid string) ([]byte, error) {
 	stream, err := c.client.CheckTask(context.Background(), &service.CheckTaskRequest{UUID: uuid})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to CheckTask")
@@ -135,6 +129,23 @@ func (c *Client) GetTaskResult(uuid string) ([]byte, error) {
 
 		<-time.After(time.Second)
 	}
+}
+
+// GetTaskStatus gets a task's current status
+func (c *Client) GetTaskStatus(uuid string) (string, error) {
+	stream, err := c.client.CheckTask(context.Background(), &service.CheckTaskRequest{UUID: uuid})
+	if err != nil {
+		return "", errors.Wrap(err, "failed to CheckTask")
+	}
+
+	resp, err := stream.Recv()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to Recv")
+	}
+
+	log.LogInfo(fmt.Sprintf("task %s status %s", uuid, resp.Status))
+
+	return resp.Status, nil
 }
 
 func (c *Client) decryptResult(taskUUID string, taskResponse *service.CheckTaskResponse) ([]byte, error) {
