@@ -7,6 +7,7 @@ import (
 
 	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
+	"github.com/taask/taask-server/auth"
 	"github.com/taask/taask-server/brain"
 	"github.com/taask/taask-server/model"
 	context "golang.org/x/net/context"
@@ -39,17 +40,24 @@ type RunnerService struct {
 }
 
 // AuthRunner allows a runner to advertise itself and perform auth with the server
-func (rs *RunnerService) AuthRunner(ctx context.Context, req *AuthRunnerRequest) (*AuthRunnerResponse, error) {
+func (rs *RunnerService) AuthRunner(ctx context.Context, req *AuthMemberRequest) (*AuthMemberResponse, error) {
 	defer log.LogTrace("AuthRunner")()
 
-	encRunnerChallenge, err := rs.Manager.AuthRunner(req.PubKey, req.JoinCodeSignature)
+	attempt := &auth.Attempt{
+		MemberUUID:  req.UUID,
+		GroupUUID:   auth.DefaultGroupUUID,
+		PubKey:      req.PubKey,
+		AuthHashSig: req.AuthHashSignature,
+		Timestamp:   req.Timestamp,
+	}
+
+	encRunnerChallenge, err := rs.Manager.AttemptRunnerAuth(attempt)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := &AuthRunnerResponse{
-		EncChallenge:    encRunnerChallenge.EncChallenge,
-		EncChallengeKey: encRunnerChallenge.EncChallengeKey,
+	resp := &AuthMemberResponse{
+		EncChallenge: encRunnerChallenge.EncSessionChallenge,
 	}
 
 	return resp, nil
@@ -62,7 +70,7 @@ func (rs *RunnerService) RegisterRunner(req *RegisterRunnerRequest, stream Runne
 	tasksChan := make(chan *model.Task, 128)
 
 	runner := &model.Runner{
-		UUID:        model.NewRunnerUUID(),
+		UUID:        req.UUID,
 		Kind:        req.Kind,
 		Tags:        req.Tags,
 		TaskChannel: tasksChan,
