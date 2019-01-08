@@ -26,8 +26,8 @@ type Client struct {
 // type StatusUpdateFunc func() string
 
 // NewClient creates a Client
-func NewClient(addr string, localAuth *LocalAuthConfig) (*Client, error) {
-	conn, err := grpc.Dial(fmt.Sprintf("%s:3688", addr), grpc.WithInsecure())
+func NewClient(addr, port string, localAuth *LocalAuthConfig) (*Client, error) {
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Dial")
 	}
