@@ -17,16 +17,26 @@ import (
 
 // Manager is the facade for the subsystem managers (schedule, storage, update, auth)
 type Manager struct {
-	scheduler  *schedule.Manager
-	storage    storage.Manager
-	runnerAuth *auth.RunnerAuthManager
-	Updater    *update.Manager
+	// Updater manages updates to tasks and coordinates listeners, storage, and metrics
+	Updater *update.Manager
 
+	// Scheduler consumes tasks and schedules them onto the compute plane
+	scheduler *schedule.Manager
+	storage   storage.Manager
+
+	// runnerAuth manages the authentication of runners
+	runnerAuth     auth.Manager
+	RunnerJoinCode string
+
+	// clientAuth manages the authentication of clients
+	clientAuth auth.Manager
+
+	// metrics manages observability
 	metrics *metrics.Manager
 }
 
 // NewManager creates a new manager
-func NewManager(joinCode string, storage storage.Manager) *Manager {
+func NewManager(joinCode string, storage storage.Manager, runnerAuth, clientAuth auth.Manager) *Manager {
 	metrics, err := metrics.NewManager()
 	if err != nil {
 		log.LogError(errors.Wrap(err, "failed to metrics.NewManager"))
@@ -38,29 +48,48 @@ func NewManager(joinCode string, storage storage.Manager) *Manager {
 	scheduler := schedule.NewManager(updater)
 	go scheduler.Start()
 
-	runnerAuth, err := auth.NewRunnerAuthManager(joinCode)
-	if err != nil {
-		log.LogError(errors.Wrap(err, "failed to NewRunnerAuthManager"))
-		return nil
-	}
-
 	return &Manager{
-		scheduler:  scheduler,
-		storage:    storage,
-		runnerAuth: runnerAuth,
-		Updater:    updater,
-		metrics:    metrics,
+		Updater: updater,
+
+		scheduler: scheduler,
+		storage:   storage,
+
+		runnerAuth:     runnerAuth,
+		RunnerJoinCode: joinCode,
+
+		metrics: metrics,
 	}
 }
 
-// AuthRunner allows a runner to auth
-func (m *Manager) AuthRunner(pubKey *simplcrypto.SerializablePubKey, joinCodeSig *simplcrypto.Signature) (*auth.EncRunnerAuth, error) {
-	return m.runnerAuth.AttemptAuth(pubKey, joinCodeSig)
+// AttemptRunnerAuth allows a runner to auth
+func (m *Manager) AttemptRunnerAuth(attempt *auth.Attempt) (*auth.EncMemberSession, error) {
+	return m.runnerAuth.AttemptAuth(attempt)
+}
+
+// AttemptClientAuth allows a runner to auth
+func (m *Manager) AttemptClientAuth(attempt *auth.Attempt) (*auth.EncMemberSession, error) {
+	return m.clientAuth.AttemptAuth(attempt)
+}
+
+// CheckClientAuth checks client auth
+func (m *Manager) CheckClientAuth(session *auth.Session) error {
+	return m.clientAuth.CheckAuth(session)
+}
+
+// CheckClientAdminAuth checks client auth
+func (m *Manager) CheckClientAdminAuth(session *auth.Session) error {
+	return m.clientAuth.CheckAuthEnsureAdmin(session)
 }
 
 // RegisterRunner registers a runner with the manager's scheduler
 func (m *Manager) RegisterRunner(runner *model.Runner, challengeSignature *simplcrypto.Signature) error {
-	if err := m.runnerAuth.CheckRunnerAuth(runner.UUID, challengeSignature); err != nil {
+	session := &auth.Session{
+		MemberUUID:          runner.UUID,
+		GroupUUID:           auth.DefaultGroupUUID,
+		SessionChallengeSig: challengeSignature,
+	}
+
+	if err := m.runnerAuth.CheckAuth(session); err != nil {
 		return errors.Wrap(err, "failed to CheckRunnerChallenge")
 	}
 
@@ -75,7 +104,7 @@ func (m *Manager) UnregisterRunner(runner *model.Runner) {
 		log.LogError(errors.Wrap(err, "failed to UnregisterRunner"))
 	}
 
-	if err := m.runnerAuth.DeleteRunnerKey(runner.UUID); err != nil {
+	if err := m.runnerAuth.DeleteMemberAuth(runner.UUID); err != nil {
 		log.LogError(errors.Wrap(err, "failed to DeleteRunnerKey"))
 	}
 }
@@ -92,7 +121,7 @@ func (m *Manager) EncryptTaskKeyForRunner(runnerUUID string, encTaskKey *simplcr
 
 // GetMasterRunnerPubKey returns the master runner pubkey
 func (m *Manager) GetMasterRunnerPubKey() *simplcrypto.SerializablePubKey {
-	return m.runnerAuth.RunnerMasterPubKey()
+	return m.runnerAuth.MasterPubKey()
 }
 
 // ScheduleTask schedules and persists a task
@@ -147,7 +176,7 @@ func (m *Manager) UpdateTask(update model.TaskUpdate) error {
 
 // JoinCode returns the runner join code
 func (m *Manager) JoinCode() string {
-	return m.runnerAuth.JoinCode
+	return m.RunnerJoinCode
 }
 
 // MetricsHandler returns the http handler for metrics scraping
