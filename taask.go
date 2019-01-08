@@ -17,40 +17,32 @@ import (
 
 // Client describes a taask client
 type Client struct {
-	client             service.TaskServiceClient
-	masterRunnerPubKey *simplcrypto.KeyPair
-	taskKeyPairs       map[string]*simplcrypto.KeyPair
-	taskKeys           map[string]*simplcrypto.SymKey
-	keyLock            *sync.Mutex
+	client    service.TaskServiceClient
+	localAuth *LocalAuthConfig
+	taskKeys  map[string]*simplcrypto.SymKey
+	keyLock   *sync.Mutex
 }
 
 // type StatusUpdateFunc func() string
 
 // NewClient creates a Client
-func NewClient(addr, port string) (*Client, error) {
-	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
+func NewClient(addr string, localAuth *LocalAuthConfig) (*Client, error) {
+	conn, err := grpc.Dial(fmt.Sprintf("%s:3688", addr), grpc.WithInsecure())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Dial")
 	}
 
 	tClient := service.NewTaskServiceClient(conn)
 
-	authResp, err := tClient.AuthClient(context.Background(), &service.AuthClientRequest{})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to AuthClient")
-	}
-
-	masterRunnerPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterRunnerPubKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to KeyPairFromSerializablePubKey")
+	if err := localAuth.Authenticate(tClient); err != nil {
+		return nil, errors.Wrap(err, "failed to Authenticate")
 	}
 
 	client := &Client{
-		client:             tClient,
-		masterRunnerPubKey: masterRunnerPubKey,
-		taskKeyPairs:       make(map[string]*simplcrypto.KeyPair),
-		taskKeys:           make(map[string]*simplcrypto.SymKey),
-		keyLock:            &sync.Mutex{},
+		client:    tClient,
+		localAuth: localAuth,
+		taskKeys:  make(map[string]*simplcrypto.SymKey),
+		keyLock:   &sync.Mutex{},
 	}
 
 	return client, nil
@@ -73,9 +65,9 @@ func (c *Client) SendSpecTask(spec Task) (string, error) {
 		return "", errors.New("task body is nil")
 	}
 
-	taskKeyPair, err := simplcrypto.GenerateNewKeyPair()
+	groupKey, err := c.localAuth.GroupKey()
 	if err != nil {
-		return "", errors.Wrap(err, "failed to GenerateNewKeyPair")
+		return "", errors.Wrap(err, "failed to GroupKey")
 	}
 
 	taskKey, err := simplcrypto.GenerateSymKey()
@@ -83,18 +75,22 @@ func (c *Client) SendSpecTask(spec Task) (string, error) {
 		return "", errors.Wrap(err, "failed to GenerateSymKey")
 	}
 
-	task, err := spec.ToModel(taskKey, c.masterRunnerPubKey, taskKeyPair)
+	task, err := spec.ToModel(taskKey, c.localAuth.ActiveSession.MasterRunnerPubKey, groupKey)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to ToModel")
 	}
 
-	resp, err := c.client.Queue(context.Background(), task)
+	req := &service.QueueTaskRequest{
+		Task:    task,
+		Session: c.localAuth.ActiveSession.Session,
+	}
+
+	resp, err := c.client.Queue(context.Background(), req)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to Queue")
 	}
 
 	c.keyLock.Lock()
-	c.taskKeyPairs[resp.UUID] = taskKeyPair // TODO: persist this in real/shared storage
 	c.taskKeys[resp.UUID] = taskKey
 	c.keyLock.Unlock()
 
@@ -152,15 +148,12 @@ func (c *Client) decryptResult(taskUUID string, taskResponse *service.CheckTaskR
 	c.keyLock.Lock()
 	taskKey, ok := c.taskKeys[taskUUID]
 	if !ok {
-		// if this client didn't create the task, fetch the task keypair
-		// from storage and decrypt the task key from metadata
-		// TODO: add... well, real storage
-		taskKeyPair, ok := c.taskKeyPairs[taskUUID]
-		if !ok {
-			return nil, errors.New(fmt.Sprintf("unable to find task %s key", taskUUID))
+		groupKey, err := c.localAuth.GroupKey()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to GroupKey")
 		}
 
-		taskKeyJSON, err := taskKeyPair.Decrypt(taskResponse.EncTaskKey)
+		taskKeyJSON, err := groupKey.Decrypt(taskResponse.EncTaskKey)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to Decrypt task key JSON")
 		}
@@ -169,6 +162,8 @@ func (c *Client) decryptResult(taskUUID string, taskResponse *service.CheckTaskR
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to SymKeyFromJSON")
 		}
+
+		c.taskKeys[taskUUID] = taskKey // cache it
 	}
 	c.keyLock.Unlock()
 

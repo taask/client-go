@@ -19,16 +19,16 @@ const (
 
 // Spec defines the metadata wrapper for a task spec
 type Spec struct {
-	Version int    `yaml:"Version"`
-	Type    string `yaml:"Type"`
-	Spec    Task   `yaml:"Spec"`
+	Version int
+	Type    string
+	Spec    Task
 }
 
 // Task is a user-facing variant of taask/taask-server/model/Task
 type Task struct {
-	Meta TaskMeta               `yaml:"Meta"`
-	Kind string                 `yaml:"Kind"`
-	Body map[string]interface{} `yaml:"Body"`
+	Meta TaskMeta
+	Kind string
+	Body map[string]interface{}
 }
 
 // TaskMeta is a user-facing variant of taask/taask-server/model/TaskMeta
@@ -38,7 +38,7 @@ type TaskMeta struct {
 }
 
 // ToModel converts a spec.Task to a model.Task by encrypting it and setting the appropriate fields
-func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey, taskKeypair *simplcrypto.KeyPair) (*model.Task, error) {
+func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey *simplcrypto.KeyPair, groupKey *simplcrypto.SymKey) (*model.Task, error) {
 	bodyJSON, err := json.Marshal(t.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Marshal body")
@@ -54,7 +54,7 @@ func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey, taskKeypair
 		return nil, errors.Wrap(err, "failed to Encrypt task key for runners")
 	}
 
-	clientEncKey, err := taskKeypair.Encrypt(taskKey.JSON())
+	clientEncKey, err := groupKey.Encrypt(taskKey.JSON())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Encrypt task key for client")
 	}
