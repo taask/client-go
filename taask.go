@@ -163,6 +163,9 @@ func (c *Client) decryptResult(taskUUID string, taskResponse *service.CheckTaskR
 			return nil, errors.Wrap(err, "failed to GroupKey")
 		}
 
+		// TODO: figure out how to remove this hack... it's not really a problem, but it's messy.
+		groupKey.KID = taskResponse.EncTaskKey.KID
+
 		taskKeyJSON, err := groupKey.Decrypt(taskResponse.EncTaskKey)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to Decrypt task key JSON")
