@@ -8,7 +8,6 @@ import (
 
 	"github.com/cohix/simplcrypto"
 
-	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
 	"github.com/taask/taask-server/model"
 	"github.com/taask/taask-server/service"
@@ -115,8 +114,6 @@ func (c *Client) StreamTaskResult(uuid string) ([]byte, error) {
 			return nil, errors.Wrap(err, "failed to Recv")
 		}
 
-		log.LogInfo(fmt.Sprintf("task %s status %s", uuid, resp.Status))
-
 		if resp.Status == model.TaskStatusCompleted {
 			result, err := c.decryptResult(uuid, resp)
 			if err != nil {
@@ -148,8 +145,6 @@ func (c *Client) GetTaskStatus(uuid string) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "failed to Recv")
 	}
-
-	log.LogInfo(fmt.Sprintf("task %s status %s", uuid, resp.Status))
 
 	return resp.Status, nil
 }
