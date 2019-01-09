@@ -99,7 +99,12 @@ func (c *Client) SendSpecTask(spec Task) (string, error) {
 
 // StreamTaskResult gets a task's result
 func (c *Client) StreamTaskResult(uuid string) ([]byte, error) {
-	stream, err := c.client.CheckTask(context.Background(), &service.CheckTaskRequest{UUID: uuid})
+	req := &service.CheckTaskRequest{
+		UUID:    uuid,
+		Session: c.localAuth.ActiveSession.Session,
+	}
+
+	stream, err := c.client.CheckTask(context.Background(), req)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to CheckTask")
 	}
@@ -129,7 +134,12 @@ func (c *Client) StreamTaskResult(uuid string) ([]byte, error) {
 
 // GetTaskStatus gets a task's current status
 func (c *Client) GetTaskStatus(uuid string) (string, error) {
-	stream, err := c.client.CheckTask(context.Background(), &service.CheckTaskRequest{UUID: uuid})
+	req := &service.CheckTaskRequest{
+		UUID:    uuid,
+		Session: c.localAuth.ActiveSession.Session,
+	}
+
+	stream, err := c.client.CheckTask(context.Background(), req)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to CheckTask")
 	}
