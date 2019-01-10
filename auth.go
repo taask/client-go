@@ -43,7 +43,7 @@ func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error 
 
 	nonce := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nonce, uint64(timestamp))
-	hashWithNonce := append(la.AdminGroup.AuthHash, nonce...)
+	hashWithNonce := append(la.MemberGroup.AuthHash, nonce...)
 
 	authHashSig, err := keypair.Sign(hashWithNonce)
 	if err != nil {
@@ -52,7 +52,7 @@ func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error 
 
 	attempt := &service.AuthMemberRequest{
 		UUID:              memberUUID,
-		GroupUUID:         la.AdminGroup.UUID,
+		GroupUUID:         la.MemberGroup.UUID,
 		PubKey:            keypair.SerializablePubKey(),
 		AuthHashSignature: authHashSig,
 		Timestamp:         timestamp,
@@ -81,7 +81,7 @@ func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error 
 	session := activeSession{
 		Session: &auth.Session{
 			MemberUUID:          memberUUID,
-			GroupUUID:           la.AdminGroup.UUID,
+			GroupUUID:           la.MemberGroup.UUID,
 			SessionChallengeSig: challengeSig,
 		},
 		Keypair:            keypair,
@@ -99,8 +99,8 @@ func (la *LocalAuthConfig) GroupKey() (*simplcrypto.SymKey, error) {
 }
 
 // WriteServerConfig writes the admin groups's auth file to disk
-func (la *LocalAuthConfig) WriteServerConfig(path string) error {
-	serverConfigPath := filepath.Join(config.DefaultConfigDir(), "client-auth.yaml")
+func (la *LocalAuthConfig) WriteServerConfig() error {
+	serverConfigPath := filepath.Join(config.DefaultServerConfigDir(), config.ClientAuthConfigFilename)
 
 	return la.ClientAuthConfig.WriteYAML(serverConfigPath)
 }
@@ -123,7 +123,7 @@ func (la *LocalAuthConfig) WriteYAML(filepath string) error {
 func GenerateAdminGroup() *LocalAuthConfig {
 	passphrase := auth.GenerateJoinCode() // generate a passphrase for now, TODO: allow user to set passphrase
 
-	adminConfig := generateAdminGroup(passphrase)
+	adminConfig := generateNewMemberGroup("admin", auth.AdminGroupUUID, passphrase)
 
 	localConfig := &LocalAuthConfig{
 		ClientAuthConfig: adminConfig,
@@ -133,21 +133,21 @@ func GenerateAdminGroup() *LocalAuthConfig {
 	return localConfig
 }
 
-func generateAdminGroup(passphrase string) config.ClientAuthConfig {
+func generateNewMemberGroup(name, uuid, passphrase string) config.ClientAuthConfig {
 	joinCode := auth.GenerateJoinCode()
 	authHash := auth.GroupAuthHash(joinCode, passphrase)
 
 	group := auth.MemberGroup{
-		UUID:     auth.AdminGroupUUID,
-		Name:     "admin",
+		UUID:     uuid,
+		Name:     name,
 		JoinCode: joinCode,
 		AuthHash: authHash,
 	}
 
 	adminAuthConfig := config.ClientAuthConfig{
-		Version:    config.ClientAuthConfigVersion,
-		Type:       config.ClientAuthConfigType,
-		AdminGroup: group,
+		Version:     config.ClientAuthConfigVersion,
+		Type:        config.ClientAuthConfigType,
+		MemberGroup: group,
 	}
 
 	return adminAuthConfig

@@ -33,8 +33,8 @@ func LocalAuthConfigFromFile(filepath string) (*LocalAuthConfig, error) {
 	return config, nil
 }
 
-// DefaultConfigDir returns ~/.taask/server/config unless XDG_CONFIG_HOME is set
-func DefaultConfigDir() string {
+// DefaultClientConfigDir returns ~/.taask/client/config unless XDG_CONFIG_HOME is set
+func DefaultClientConfigDir() string {
 	u, err := user.Current()
 	if err != nil {
 		return ""
