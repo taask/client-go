@@ -20,7 +20,7 @@ import (
 // LocalAuthConfig includes everything needed to auth with a member group
 type LocalAuthConfig struct {
 	config.ClientAuthConfig
-	Passphrase    string
+	Passphrase    string        `yaml:"passphrase,omitempty"`
 	ActiveSession activeSession `yaml:"-"`
 }
 
@@ -99,8 +99,8 @@ func (la *LocalAuthConfig) GroupKey() (*simplcrypto.SymKey, error) {
 }
 
 // WriteServerConfig writes the admin groups's auth file to disk
-func (la *LocalAuthConfig) WriteServerConfig() error {
-	serverConfigPath := filepath.Join(config.DefaultServerConfigDir(), config.ClientAuthConfigFilename)
+func (la *LocalAuthConfig) WriteServerConfig(filename string) error {
+	serverConfigPath := filepath.Join(config.DefaultServerConfigDir(), filename)
 
 	return la.ClientAuthConfig.WriteYAML(serverConfigPath)
 }
@@ -133,6 +133,17 @@ func GenerateAdminGroup() *LocalAuthConfig {
 	return localConfig
 }
 
+// GenerateDefaultRunnerGroup generates an admin user group for taask-server
+func GenerateDefaultRunnerGroup() *LocalAuthConfig {
+	defaultConfig := generateNewMemberGroup("default", auth.DefaultGroupUUID, "")
+
+	localConfig := &LocalAuthConfig{
+		ClientAuthConfig: defaultConfig,
+	}
+
+	return localConfig
+}
+
 func generateNewMemberGroup(name, uuid, passphrase string) config.ClientAuthConfig {
 	joinCode := auth.GenerateJoinCode()
 	authHash := auth.GroupAuthHash(joinCode, passphrase)
@@ -145,8 +156,8 @@ func generateNewMemberGroup(name, uuid, passphrase string) config.ClientAuthConf
 	}
 
 	adminAuthConfig := config.ClientAuthConfig{
-		Version:     config.ClientAuthConfigVersion,
-		Type:        config.ClientAuthConfigType,
+		Version:     config.MemberAuthConfigVersion,
+		Type:        config.MemberAuthConfigType,
 		MemberGroup: group,
 	}
 
