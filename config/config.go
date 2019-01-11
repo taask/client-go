@@ -11,18 +11,19 @@ import (
 	"github.com/cohix/simplcrypto"
 	"github.com/pkg/errors"
 	"github.com/taask/taask-server/auth"
-	"github.com/taask/taask-server/config"
+	sconfig "github.com/taask/taask-server/config"
 	yaml "gopkg.in/yaml.v2"
 )
 
 // ConfigClientBadeDir is the path in $HOME where configs are stored/
 const (
-	ConfigClientBaseDir = ".taask/client/config/"
+	ConfigClientBaseDir         = ".taask/client/config/"
+	ConfigClientDefaultFilename = "admin-auth.yaml"
 )
 
 // LocalAuthConfig includes everything needed to auth with a member group
 type LocalAuthConfig struct {
-	config.ClientAuthConfig
+	sconfig.ClientAuthConfig
 	Passphrase    string        `yaml:"passphrase,omitempty"`
 	ActiveSession ActiveSession `yaml:"-"`
 }
@@ -58,7 +59,7 @@ func (la *LocalAuthConfig) GroupKey() (*simplcrypto.SymKey, error) {
 
 // WriteServerConfig writes the admin groups's auth file to disk
 func (la *LocalAuthConfig) WriteServerConfig(filename string) error {
-	serverConfigPath := filepath.Join(config.DefaultServerConfigDir(), filename)
+	serverConfigPath := filepath.Join(sconfig.DefaultServerConfigDir(), filename)
 
 	return la.ClientAuthConfig.WriteYAML(serverConfigPath)
 }

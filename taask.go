@@ -3,6 +3,7 @@ package taask
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -24,6 +25,17 @@ type Client struct {
 }
 
 // type StatusUpdateFunc func() string
+
+// NewClientWithDefaultConfig returns a client created from the default config on disk
+func NewClientWithDefaultConfig(addr, port string) (*Client, error) {
+	filepath := filepath.Join(config.DefaultClientConfigDir(), config.ConfigClientDefaultFilename)
+	localAuth, err := config.LocalAuthConfigFromFile(filepath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to LocalAuthConfigFromFile")
+	}
+
+	return NewClient(addr, port, localAuth)
+}
 
 // NewClient creates a Client
 func NewClient(addr, port string, localAuth *config.LocalAuthConfig) (*Client, error) {
