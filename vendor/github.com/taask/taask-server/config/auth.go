@@ -12,7 +12,7 @@ import (
 // ClientAuthConfigType describe consts for server config
 const (
 	MemberAuthConfigVersion = 1
-	MemberAuthConfigType    = "com.taask.config/memberauth"
+	MemberAuthConfigType    = "com.taask.config.memberauth"
 )
 
 // ClientAuthConfig is the config for client auth
