@@ -9,6 +9,7 @@ import (
 	"github.com/cohix/simplcrypto"
 
 	"github.com/pkg/errors"
+	"github.com/taask/client-golang/config"
 	"github.com/taask/taask-server/model"
 	"github.com/taask/taask-server/service"
 	"google.golang.org/grpc"
@@ -17,7 +18,7 @@ import (
 // Client describes a taask client
 type Client struct {
 	client    service.TaskServiceClient
-	localAuth *LocalAuthConfig
+	localAuth *config.LocalAuthConfig
 	taskKeys  map[string]*simplcrypto.SymKey
 	keyLock   *sync.Mutex
 }
@@ -25,7 +26,7 @@ type Client struct {
 // type StatusUpdateFunc func() string
 
 // NewClient creates a Client
-func NewClient(addr, port string, localAuth *LocalAuthConfig) (*Client, error) {
+func NewClient(addr, port string, localAuth *config.LocalAuthConfig) (*Client, error) {
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Dial")
@@ -33,15 +34,15 @@ func NewClient(addr, port string, localAuth *LocalAuthConfig) (*Client, error) {
 
 	tClient := service.NewTaskServiceClient(conn)
 
-	if err := localAuth.Authenticate(tClient); err != nil {
-		return nil, errors.Wrap(err, "failed to Authenticate")
-	}
-
 	client := &Client{
 		client:    tClient,
 		localAuth: localAuth,
 		taskKeys:  make(map[string]*simplcrypto.SymKey),
 		keyLock:   &sync.Mutex{},
+	}
+
+	if err := client.authenticate(); err != nil {
+		return nil, errors.Wrap(err, "failed to Authenticate")
 	}
 
 	return client, nil

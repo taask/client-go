@@ -3,35 +3,20 @@ package taask
 import (
 	"context"
 	"encoding/binary"
-	"io/ioutil"
-	"path/filepath"
 	"time"
 
 	"github.com/cohix/simplcrypto"
 
 	"github.com/pkg/errors"
+	"github.com/taask/client-golang/config"
 	"github.com/taask/taask-server/auth"
-	"github.com/taask/taask-server/config"
+	sconfig "github.com/taask/taask-server/config"
 	"github.com/taask/taask-server/model"
 	"github.com/taask/taask-server/service"
-	yaml "gopkg.in/yaml.v2"
 )
 
-// LocalAuthConfig includes everything needed to auth with a member group
-type LocalAuthConfig struct {
-	config.ClientAuthConfig
-	Passphrase    string        `yaml:"passphrase,omitempty"`
-	ActiveSession activeSession `yaml:"-"`
-}
-
-type activeSession struct {
-	*auth.Session      `yaml:"-"`
-	Keypair            *simplcrypto.KeyPair `yaml:"-"`
-	MasterRunnerPubKey *simplcrypto.KeyPair `yaml:"-"`
-}
-
 // Authenticate auths with the taask server and saves the session
-func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error {
+func (c *Client) authenticate() error {
 	memberUUID := model.NewRunnerUUID()
 
 	keypair, err := simplcrypto.GenerateNewKeyPair()
@@ -43,7 +28,7 @@ func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error 
 
 	nonce := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nonce, uint64(timestamp))
-	hashWithNonce := append(la.MemberGroup.AuthHash, nonce...)
+	hashWithNonce := append(c.localAuth.MemberGroup.AuthHash, nonce...)
 
 	authHashSig, err := keypair.Sign(hashWithNonce)
 	if err != nil {
@@ -52,13 +37,13 @@ func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error 
 
 	attempt := &service.AuthMemberRequest{
 		UUID:              memberUUID,
-		GroupUUID:         la.MemberGroup.UUID,
+		GroupUUID:         c.localAuth.MemberGroup.UUID,
 		PubKey:            keypair.SerializablePubKey(),
 		AuthHashSignature: authHashSig,
 		Timestamp:         timestamp,
 	}
 
-	authResp, err := client.AuthClient(context.Background(), attempt)
+	authResp, err := c.client.AuthClient(context.Background(), attempt)
 	if err != nil {
 		return errors.Wrap(err, "failed to AuthClient")
 	}
@@ -78,54 +63,28 @@ func (la *LocalAuthConfig) Authenticate(client service.TaskServiceClient) error 
 		return errors.Wrap(err, "failed to Sign challenge")
 	}
 
-	session := activeSession{
+	session := config.ActiveSession{
 		Session: &auth.Session{
 			MemberUUID:          memberUUID,
-			GroupUUID:           la.MemberGroup.UUID,
+			GroupUUID:           c.localAuth.MemberGroup.UUID,
 			SessionChallengeSig: challengeSig,
 		},
 		Keypair:            keypair,
 		MasterRunnerPubKey: masterRunnerPubKey,
 	}
 
-	la.ActiveSession = session
-
-	return nil
-}
-
-// GroupKey returns the key for a group
-func (la *LocalAuthConfig) GroupKey() (*simplcrypto.SymKey, error) {
-	return auth.GroupDerivedKey(la.Passphrase)
-}
-
-// WriteServerConfig writes the admin groups's auth file to disk
-func (la *LocalAuthConfig) WriteServerConfig(filename string) error {
-	serverConfigPath := filepath.Join(config.DefaultServerConfigDir(), filename)
-
-	return la.ClientAuthConfig.WriteYAML(serverConfigPath)
-}
-
-// WriteYAML writes the YAML marshalled config to disk
-func (la *LocalAuthConfig) WriteYAML(filepath string) error {
-	rawYAML, err := yaml.Marshal(la)
-	if err != nil {
-		return errors.Wrap(err, "failed to yaml.Marshal")
-	}
-
-	if err := ioutil.WriteFile(filepath, rawYAML, 0666); err != nil {
-		return errors.Wrap(err, "failed to WriteFile")
-	}
+	c.localAuth.ActiveSession = session
 
 	return nil
 }
 
 // GenerateAdminGroup generates an admin user group for taask-server
-func GenerateAdminGroup() *LocalAuthConfig {
+func GenerateAdminGroup() *config.LocalAuthConfig {
 	passphrase := auth.GenerateJoinCode() // generate a passphrase for now, TODO: allow user to set passphrase
 
 	adminConfig := generateNewMemberGroup("admin", auth.AdminGroupUUID, passphrase)
 
-	localConfig := &LocalAuthConfig{
+	localConfig := &config.LocalAuthConfig{
 		ClientAuthConfig: adminConfig,
 		Passphrase:       passphrase,
 	}
@@ -134,17 +93,17 @@ func GenerateAdminGroup() *LocalAuthConfig {
 }
 
 // GenerateDefaultRunnerGroup generates an admin user group for taask-server
-func GenerateDefaultRunnerGroup() *LocalAuthConfig {
+func GenerateDefaultRunnerGroup() *config.LocalAuthConfig {
 	defaultConfig := generateNewMemberGroup("default", auth.DefaultGroupUUID, "")
 
-	localConfig := &LocalAuthConfig{
+	localConfig := &config.LocalAuthConfig{
 		ClientAuthConfig: defaultConfig,
 	}
 
 	return localConfig
 }
 
-func generateNewMemberGroup(name, uuid, passphrase string) config.ClientAuthConfig {
+func generateNewMemberGroup(name, uuid, passphrase string) sconfig.ClientAuthConfig {
 	joinCode := auth.GenerateJoinCode()
 	authHash := auth.GroupAuthHash(joinCode, passphrase)
 
@@ -155,9 +114,9 @@ func generateNewMemberGroup(name, uuid, passphrase string) config.ClientAuthConf
 		AuthHash: authHash,
 	}
 
-	adminAuthConfig := config.ClientAuthConfig{
-		Version:     config.MemberAuthConfigVersion,
-		Type:        config.MemberAuthConfigType,
+	adminAuthConfig := sconfig.ClientAuthConfig{
+		Version:     sconfig.MemberAuthConfigVersion,
+		Type:        sconfig.MemberAuthConfigType,
 		MemberGroup: group,
 	}
 
