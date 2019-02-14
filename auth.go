@@ -3,6 +3,7 @@ package taask
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"time"
 
 	"github.com/cohix/simplcrypto"
@@ -81,7 +82,9 @@ func (c *Client) authenticate() error {
 func GenerateAdminGroup() *config.LocalAuthConfig {
 	passphrase := auth.GenerateJoinCode() // generate a passphrase for now, TODO: allow user to set passphrase
 
-	adminConfig := generateNewMemberGroup("admin", auth.AdminGroupUUID, passphrase)
+	service, _ := generateService(sconfig.ServiceTypeClient, "localhost")
+
+	adminConfig := generateNewMemberGroup("admin", auth.AdminGroupUUID, passphrase, service)
 
 	localConfig := &config.LocalAuthConfig{
 		ClientAuthConfig: adminConfig,
@@ -91,9 +94,11 @@ func GenerateAdminGroup() *config.LocalAuthConfig {
 	return localConfig
 }
 
-// GenerateDefaultRunnerGroup generates an admin user group for taask-server
+// GenerateDefaultRunnerGroup generates a runner group for taask-server
 func GenerateDefaultRunnerGroup() *config.LocalAuthConfig {
-	defaultConfig := generateNewMemberGroup("default", auth.DefaultGroupUUID, "")
+	service, _ := generateService(sconfig.ServiceTypeRunner, "taask-server")
+
+	defaultConfig := generateNewMemberGroup("default", auth.DefaultGroupUUID, "", service)
 
 	localConfig := &config.LocalAuthConfig{
 		ClientAuthConfig: defaultConfig,
@@ -102,7 +107,23 @@ func GenerateDefaultRunnerGroup() *config.LocalAuthConfig {
 	return localConfig
 }
 
-func generateNewMemberGroup(name, uuid, passphrase string) sconfig.ClientAuthConfig {
+// GenerateDefaultPartnerGroup generates a partner group for taask-server
+func GenerateDefaultPartnerGroup() *config.LocalAuthConfig {
+	passphrase := auth.GenerateJoinCode()
+
+	service, _ := generateService(sconfig.ServiceTypePartner, "taask-server")
+
+	defaultConfig := generateNewMemberGroup("partner", auth.PartnerGroupUUID, passphrase, service)
+
+	localConfig := &config.LocalAuthConfig{
+		Passphrase:       passphrase,
+		ClientAuthConfig: defaultConfig,
+	}
+
+	return localConfig
+}
+
+func generateNewMemberGroup(name, uuid, passphrase string, service *sconfig.Service) sconfig.ClientAuthConfig {
 	joinCode := auth.GenerateJoinCode()
 	authHash := auth.GroupAuthHash(joinCode, passphrase)
 
@@ -117,7 +138,30 @@ func generateNewMemberGroup(name, uuid, passphrase string) sconfig.ClientAuthCon
 		Version:     sconfig.MemberAuthConfigVersion,
 		Type:        sconfig.MemberAuthConfigType,
 		MemberGroup: group,
+		Service:     service,
 	}
 
 	return adminAuthConfig
+}
+
+var serviceTypeToPortMap = map[string]string{
+	sconfig.ServiceTypeRunner:  "3687",
+	sconfig.ServiceTypeClient:  "30688", // this is higher for local dev
+	sconfig.ServiceTypePartner: "3690",
+}
+
+func generateService(serviceType, host string) (*sconfig.Service, error) {
+	service := &sconfig.Service{
+		Type: serviceType,
+		Host: host,
+	}
+
+	port, ok := serviceTypeToPortMap[serviceType]
+	if !ok {
+		return nil, fmt.Errorf("%s is not a valid service type", serviceType)
+	}
+
+	service.Port = port
+
+	return service, nil
 }

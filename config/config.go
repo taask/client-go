@@ -23,8 +23,8 @@ const (
 
 // LocalAuthConfig includes everything needed to auth with a member group
 type LocalAuthConfig struct {
+	Passphrase string `yaml:"passphrase,omitempty"`
 	sconfig.ClientAuthConfig
-	Passphrase    string        `yaml:"passphrase,omitempty"`
 	ActiveSession ActiveSession `yaml:"-"`
 }
 
