@@ -12,7 +12,6 @@ import (
 	"github.com/taask/taask-server/auth"
 	sconfig "github.com/taask/taask-server/config"
 	"github.com/taask/taask-server/model"
-	"github.com/taask/taask-server/service"
 )
 
 // Authenticate auths with the taask server and saves the session
@@ -35,8 +34,8 @@ func (c *Client) authenticate() error {
 		return errors.Wrap(err, "failed to Sign")
 	}
 
-	attempt := &service.AuthMemberRequest{
-		UUID:              memberUUID,
+	attempt := &auth.Attempt{
+		MemberUUID:        memberUUID,
 		GroupUUID:         c.localAuth.MemberGroup.UUID,
 		PubKey:            keypair.SerializablePubKey(),
 		AuthHashSignature: authHashSig,
