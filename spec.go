@@ -64,6 +64,7 @@ func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey *simplcrypto
 			Annotations:    t.Meta.Annotations,
 			TimeoutSeconds: t.Meta.TimeoutSeconds,
 			ClientKeyKID:   clientEncKey.KID,
+			EncTaskKeys:    map[string]*simplcrypto.Message{},
 		},
 		Kind:    t.Kind,
 		EncBody: encBody,
