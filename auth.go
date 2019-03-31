@@ -53,7 +53,7 @@ func (c *Client) authenticate() error {
 		return errors.Wrap(err, "failed to Decrypt challenge")
 	}
 
-	masterRunnerPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterPubKey)
+	masterPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterPubKey)
 	if err != nil {
 		return errors.Wrap(err, "failed to KeyPairFromSerializablePubKey")
 	}
@@ -69,8 +69,8 @@ func (c *Client) authenticate() error {
 			GroupUUID:           c.localAuth.MemberGroup.UUID,
 			SessionChallengeSig: challengeSig,
 		},
-		Keypair:            keypair,
-		MasterRunnerPubKey: masterRunnerPubKey,
+		Keypair:      keypair,
+		MasterPubKey: masterPubKey,
 	}
 
 	c.localAuth.ActiveSession = session

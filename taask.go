@@ -87,7 +87,7 @@ func (c *Client) SendSpecTask(spec Task) (string, error) {
 		return "", errors.Wrap(err, "failed to GenerateSymKey")
 	}
 
-	task, err := spec.ToModel(taskKey, c.localAuth.ActiveSession.MasterRunnerPubKey, groupKey)
+	task, err := spec.ToModel(taskKey, c.localAuth.ActiveSession.MasterPubKey, groupKey)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to ToModel")
 	}

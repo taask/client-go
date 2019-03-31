@@ -30,9 +30,9 @@ type LocalAuthConfig struct {
 
 // ActiveSession represents an active session with the server
 type ActiveSession struct {
-	*auth.Session      `yaml:"-"`
-	Keypair            *simplcrypto.KeyPair `yaml:"-"`
-	MasterRunnerPubKey *simplcrypto.KeyPair `yaml:"-"`
+	*auth.Session `yaml:"-"`
+	Keypair       *simplcrypto.KeyPair `yaml:"-"`
+	MasterPubKey  *simplcrypto.KeyPair `yaml:"-"`
 }
 
 // LocalAuthConfigFromFile reads a LocalAuthConfig from a file

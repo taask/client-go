@@ -61,14 +61,16 @@ func (t *Task) ToModel(taskKey *simplcrypto.SymKey, masterRunnerKey *simplcrypto
 
 	task := &model.Task{
 		Meta: &model.TaskMeta{
-			Annotations:      t.Meta.Annotations,
-			TimeoutSeconds:   t.Meta.TimeoutSeconds,
-			MasterEncTaskKey: masterEncKey,
-			ClientEncTaskKey: clientEncKey,
+			Annotations:    t.Meta.Annotations,
+			TimeoutSeconds: t.Meta.TimeoutSeconds,
+			ClientKeyKID:   clientEncKey.KID,
 		},
 		Kind:    t.Kind,
 		EncBody: encBody,
 	}
+
+	task.AddEncTaskKey(masterEncKey)
+	task.AddEncTaskKey(clientEncKey)
 
 	if task.Kind == "" {
 		task.Kind = TaskKindK8s
