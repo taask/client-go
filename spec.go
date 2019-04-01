@@ -33,8 +33,8 @@ type Task struct {
 
 // TaskMeta is a user-facing variant of taask/taask-server/model/TaskMeta
 type TaskMeta struct {
-	Annotations    []string `yaml:"Annotations,omitempty"`
-	TimeoutSeconds int32    `yaml:"TimeoutSeconds,omitempty"`
+	Annotations    []string
+	TimeoutSeconds int32
 }
 
 // ToModel converts a spec.Task to a model.Task by encrypting it and setting the appropriate fields
