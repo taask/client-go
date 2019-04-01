@@ -188,7 +188,7 @@ func (c *Client) decryptResult(taskUUID string, taskResponse *service.CheckTaskR
 	}
 	c.keyLock.Unlock()
 
-	decResult, err := taskKey.Decrypt(taskResponse.Result.EncResult)
+	decResult, err := taskKey.Decrypt(taskResponse.Result)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Decrypt result")
 	}
